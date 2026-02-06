@@ -35,5 +35,14 @@ services:
     volumes:
       - ./front:/usr/share/nginx/html:ro
 
+  motoradmin:
+    image: motoradmin/motoradmin
+    container_name: motoradmin
+    restart: unless-stopped
+    ports:
+      - "3001:3000"
+    depends_on:
+      - postgres
+
 volumes:
   postgres_data:
