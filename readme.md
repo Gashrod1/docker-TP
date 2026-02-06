@@ -6,7 +6,7 @@ Créer un Swarm **1 manager + 2 workers** sans VMs lourdes, en utilisant 3 conte
 ---
 
 ## Création des 3 nœuds (avec ports publiés)
->  Problème rencontré et important : publier les ports sur le conteneur `mgr`, sinon les services Swarm ne sont pas accessibles depuis l’hôte (erreur CORS côté navigateur).
+> Problème rencontré : publier les ports sur `mgr`, sinon les services Swarm ne sont pas accessibles depuis l’hôte (erreur CORS côté navigateur).
 
 ```
 docker network create --subnet 10.10.0.0/24 swarmnet
@@ -30,7 +30,7 @@ docker run -d --privileged --name w2 --hostname w2 \
 docker exec mgr docker swarm init --advertise-addr 10.10.0.2
 ```
 
-Joindre les workers (sans token en dur) :
+Joindre les workers :
 ```
 WORKER_TOKEN=$(docker exec mgr docker swarm join-token -q worker)
 docker exec w1 docker swarm join --token "$WORKER_TOKEN" 10.10.0.2:2377
@@ -59,6 +59,10 @@ docker exec mgr docker service create \
 
 Accès : http://localhost:9000
 
+Identifiants :
+- User : `admin`
+- Password : `Admin12345!@`
+
 ---
 
 # Déployer l’application sur Swarm
@@ -66,10 +70,10 @@ Accès : http://localhost:9000
 ## ⚠️ Problèmes rencontrés / bug Docker
 1. **Swarm ignore `build:`**  
    → erreur : `image reference must be provided`  
-   **Solution** : builder les images sur l’hôte, puis **les charger dans chaque nœud** et utiliser `image:` dans le stack.
+   **Solution** : builder les images sur l’hôte, puis **les charger dans chaque nœud** et utiliser `image:`.
 
 2. **CORS “request did not succeed”**  
-   → en fait l’API était **inaccessible**, car le conteneur `mgr` n’exposait pas les ports.  
+   → l’API était **inaccessible**, car `mgr` n’exposait pas les ports.  
    **Solution** : lancer `mgr` avec `-p 3000/8080/3001/9000`.
 
 ---
@@ -87,18 +91,22 @@ docker build -t api-rust:latest ./api-rust
 docker build -t front-static:latest ./front
 ```
 
-## 3) Charger les images dans chaque nœud DIND
-```
-docker save api-rust:latest | docker exec -i mgr docker load
-docker save api-rust:latest | docker exec -i w1 docker load
-docker save api-rust:latest | docker exec -i w2 docker load
+## 3) Publier sur Docker Hub (public)
+Créer les repos publics `gashrod1/api-rust` et `gashrod1/front-static`.
 
-docker save front-static:latest | docker exec -i mgr docker load
-docker save front-static:latest | docker exec -i w1 docker load
-docker save front-static:latest | docker exec -i w2 docker load
+Avec sudo (important) :
+```
+sudo docker logout
+sudo docker login -u gashrod1
+
+sudo docker tag api-rust:latest gashrod1/api-rust:latest
+sudo docker tag front-static:latest gashrod1/front-static:latest
+
+sudo docker push gashrod1/api-rust:latest
+sudo docker push gashrod1/front-static:latest
 ```
 
-## 4) Stack Swarm (sans build, avec image)
+## 4) Stack Swarm (images Docker Hub)
 Dans le manager :
 ```
 docker exec -it mgr sh
@@ -122,7 +130,7 @@ services:
       replicas: 1
 
   api:
-    image: api-rust:latest
+    image: gashrod1/api-rust:latest
     environment:
       DATABASE_URL: postgres://app_user:secretpassword@postgres:5432/app_db
     ports:
@@ -133,7 +141,7 @@ services:
       - postgres
 
   front:
-    image: front-static:latest
+    image: gashrod1/front-static:latest
     ports:
       - "8080:80"
     deploy:
